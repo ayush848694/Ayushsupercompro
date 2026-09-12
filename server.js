@@ -29,7 +29,7 @@ function getExpiry(cookieStr) {
     return match ? parseInt(match[1], 10) : 0;
 }
 
-// Helper: Fetch with Timeout (Because Vercel is slow)
+// Helper: Fetch with Timeout
 async function fetchWithTimeout(url, timeoutMs = 35000) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -48,10 +48,18 @@ async function updateCookie(key, currentUrl) {
     try {
         console.log(`[${key}] Fetching new cookie...`);
 
-        // Dynamic CP Logic: Replace dates with Yesterday's date
+        // Forcefully handle CP Date Logic
         if (key === 'cp') {
             const yStr = getYesterdayString();
-            currentUrl = currentUrl.replace(/begin=\d{8}T\d{6}&end=\d{8}T\d{6}/, `begin=${yStr}T183000&end=${yStr}T184000`);
+            const dateParams = `begin=${yStr}T183000&end=${yStr}T184000`;
+            
+            if (currentUrl.includes('begin=')) {
+                // If dates exist, replace them
+                currentUrl = currentUrl.replace(/begin=\d{8}T\d{6}&end=\d{8}T\d{6}/, dateParams);
+            } else {
+                // If dates are missing entirely, inject them right after the '?'
+                currentUrl = currentUrl.replace('?', `?${dateParams}&`);
+            }
         }
 
         const proxyUrl = `https://cookiesgenr.vercel.app/api/Hello?url=${encodeURIComponent(currentUrl)}`;
@@ -64,13 +72,11 @@ async function updateCookie(key, currentUrl) {
             const newUrl = currentUrl.replace(/__hdnea__=[^&]+/, pureCookie);
 
             // Save to Cache
-            if (cache[key].cookie !== undefined) {
-                cache[key].cookie = pureCookie;
-                cache[key].last_updated = getFormattedDate();
-            }
+            cache[key].cookie = pureCookie;
+            cache[key].last_updated = getFormattedDate();
             cache[key].fullUrl = newUrl;
 
-            console.log(`[${key}] Success!`);
+            console.log(`[${key}] Success! Saved new cookie.`);
 
             // Calculate 1 Hour Before Expiry
             const exp = getExpiry(pureCookie);
@@ -84,11 +90,12 @@ async function updateCookie(key, currentUrl) {
                 setTimeout(() => updateCookie(key, newUrl), timeToWait * 1000);
             }
         } else {
-            throw new Error("Vercel returned success: false or missing cookie");
+            throw new Error("Vercel returned success: false or missing cookie header.");
         }
     } catch (error) {
-        console.error(`[${key}] Failed (${error.message}). Retrying in 2 minutes...`);
-        // Retry in 2 minutes on timeout or failure
+        console.error(`[${key}] Failed. Reason: ${error.message}`);
+        console.log(`[${key}] Failed URL was: ${currentUrl}`); // Logs the failing URL to help debug
+        // Retry in 2 minutes
         setTimeout(() => updateCookie(key, currentUrl), 2 * 60 * 1000);
     }
 }
@@ -111,7 +118,7 @@ app.get('/cookies/cp.json', (req, res) => res.json([{ last_updated: cache.cp.las
 app.get('/cookies/cp', (req, res) => {
     if (req.query.start) {
         updateCookie('cp', req.query.start);
-        res.send("CP Triggered! Dates will be automatically replaced with Yesterday's date on every refresh.");
+        res.send("CP Triggered! Dates forcefully fixed and auto-looping.");
     } else res.send("Pass ?start=URL");
 });
 
