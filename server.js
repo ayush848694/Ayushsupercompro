@@ -46,6 +46,13 @@ async function fetchWithTimeout(url, timeoutMs = 35000) {
     }
 }
 
+// FIX: Extracts the RAW URL, completely ignoring '&' cuts
+function extractStartUrl(req) {
+    const idx = req.originalUrl.indexOf('start=');
+    if (idx === -1) return null;
+    return req.originalUrl.substring(idx + 6);
+}
+
 // Core Updater Function returning Debug Data
 async function updateCookie(key, currentUrl, isManualTrigger = false) {
     let debugData = {
@@ -86,7 +93,6 @@ async function updateCookie(key, currentUrl, isManualTrigger = false) {
                 let timeToWait = (exp - now) - 3600;
                 if (timeToWait < 0) timeToWait = 120;
                 
-                // Set the loop for next time
                 setTimeout(() => updateCookie(key, newUrl), timeToWait * 1000);
             }
         } else {
@@ -97,7 +103,6 @@ async function updateCookie(key, currentUrl, isManualTrigger = false) {
 
     } catch (error) {
         debugData.error = error.message;
-        // Only auto-retry if it's the background loop, not manual browser trigger
         if (!isManualTrigger) {
             setTimeout(() => updateCookie(key, currentUrl), 2 * 60 * 1000);
         }
@@ -112,25 +117,26 @@ app.get('/', (req, res) => res.send("Service is active! Base ping successful."))
 // 1. MB
 app.get('/cookies/mb.json', (req, res) => res.json([{ last_updated: cache.mb.last_updated }, { cookie: cache.mb.cookie }]));
 app.get('/cookies/mb', async (req, res) => {
-    if (!req.query.start) return res.send("Pass ?start=URL");
-    const result = await updateCookie('mb', req.query.start, true);
+    const startUrl = extractStartUrl(req);
+    if (!startUrl) return res.send("Pass ?start=URL");
+    const result = await updateCookie('mb', startUrl, true);
     res.json(result);
 });
 
 // 2. CP (Catchup)
 app.get('/cookies/cp.json', (req, res) => res.json([{ last_updated: cache.cp.last_updated }, { cookie: cache.cp.cookie }]));
 app.get('/cookies/cp', async (req, res) => {
-    if (!req.query.start) return res.send("Pass ?start=URL");
-    
-    // This will wait for Vercel and show you EXACTLY what happened
-    const result = await updateCookie('cp', req.query.start, true);
+    const startUrl = extractStartUrl(req);
+    if (!startUrl) return res.send("Pass ?start=URL");
+    const result = await updateCookie('cp', startUrl, true);
     res.json(result);
 });
 
 // 3. Star 1 Hindi
 app.get('/Star1Hindi.mpd', async (req, res) => {
-    if (req.query.start) {
-        const result = await updateCookie('star1', req.query.start, true);
+    const startUrl = extractStartUrl(req);
+    if (startUrl) {
+        const result = await updateCookie('star1', startUrl, true);
         return res.json(result);
     }
     if (cache.star1.fullUrl) return res.redirect(302, cache.star1.fullUrl);
@@ -139,8 +145,9 @@ app.get('/Star1Hindi.mpd', async (req, res) => {
 
 // 4. Star 1 HD Hindi
 app.get('/Star1HdHindi.mpd', async (req, res) => {
-    if (req.query.start) {
-        const result = await updateCookie('star1hd', req.query.start, true);
+    const startUrl = extractStartUrl(req);
+    if (startUrl) {
+        const result = await updateCookie('star1hd', startUrl, true);
         return res.json(result);
     }
     if (cache.star1hd.fullUrl) return res.redirect(302, cache.star1hd.fullUrl);
